@@ -299,7 +299,7 @@ def yaml_file_exists(args):
 
 
 def main():
-
+    print(f"tt_fpga.py gojimmypi version!")
     parser = getParser()
 
     args = parser.parse_args()
