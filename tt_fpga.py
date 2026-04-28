@@ -296,9 +296,9 @@ class TTFPGA:
         base_name = self.get_name()
 
         if args.fpga_target == "ulx3s-ecp5":
-            top_template_name = "fpga/ulx3s/tt_fpga_top_ulx3s.v"
+            top_template_name = "ulx3s/tt_fpga_top_ulx3s.v"
         else:
-            top_template_name = "fpga/tt_fpga_top.v"
+            top_template_name = "tt_fpga_top.v"
 
         with open(os.path.join(SCRIPT_DIR, "fpga", top_template_name), "r") as f:
             top_module_template = f.read()
