@@ -54,8 +54,8 @@ module tt_fpga_top (
 
     assign uio_in = 8'h00;
 
-    /* instantiate the main DUT from TT module in /project.v */
-    tt_um_gojimmypi_ttsky_UART_FSM_TRNG_Lab dut
+    /* instantiate the main user_project from TT module in /project.v */
+    __tt_um_placeholder user_project
     (
         .ui_in(ui_in),
         .uo_out(uo_out),
