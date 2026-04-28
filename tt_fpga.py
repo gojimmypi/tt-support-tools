@@ -123,6 +123,14 @@ def getParser():
     )
 
     harden.add_argument(
+        "--define",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Verilog preprocessor define to pass to Yosys. May be specified multiple times.",
+    )
+
+    harden.add_argument(
         "--source_dir",
         metavar="DIR",
         help="Directory containing source verilog files (default from info.yaml)",
@@ -316,6 +324,7 @@ class TTFPGA:
         freq = os.getenv("TT_FPGA_FREQ", "12")
 
         generated_top = os.path.join(self.source_dir, "_tt_fpga_top.v")
+        define_args = " ".join([f"-D{name}" for name in args.define])
 
         if args.fpga_target == FpgaTargetIce40Up5k:
             json_file = os.path.join(build_dir, f"{base_name}.json")
@@ -323,7 +332,7 @@ class TTFPGA:
             bin_file = os.path.join(build_dir, f"{base_name}.bin")
 
             yosys_cmd = (
-                f"yosys -l {build_dir}/01-synth.log -DSYNTH "
+                f"yosys -l {build_dir}/01-synth.log -DSYNTH {define_args} "
                 f"-p 'read_verilog -sv {generated_top} {source_list}; "
                 f"synth_ice40 -top tt_fpga_top -json {json_file}'"
             )
@@ -346,7 +355,7 @@ class TTFPGA:
             bit_file = os.path.join(build_dir, f"{base_name}.bit")
 
             yosys_cmd = (
-                f"yosys -l {build_dir}/01-synth.log -DSYNTH -DUART_ENABLED "
+                f"yosys -l {build_dir}/01-synth.log -DSYNTH {define_args} "
                 f"-p 'read_verilog -sv {generated_top} {source_list}; "
                 f"synth_ecp5 -top tt_fpga_top -json {json_file}'"
             )
