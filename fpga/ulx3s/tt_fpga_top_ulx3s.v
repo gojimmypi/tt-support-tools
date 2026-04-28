@@ -12,7 +12,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-module top_ulx3s (
+module tt_fpga_top (
     input  wire        clk_25mhz,
     input  wire [6:0]  btn,
     output wire [7:0]  led,
