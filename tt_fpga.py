@@ -323,7 +323,7 @@ class TTFPGA:
             bin_file = os.path.join(build_dir, f"{base_name}.bin")
 
             yosys_cmd = (
-                f"yosys -l {build_dir}/01-synth.log -DSYNTH -DUART_ENABLED "
+                f"yosys -l {build_dir}/01-synth.log -DSYNTH "
                 f"-p 'read_verilog -sv {generated_top} {source_list}; "
                 f"synth_ice40 -top tt_fpga_top -json {json_file}'"
             )
@@ -346,7 +346,7 @@ class TTFPGA:
             bit_file = os.path.join(build_dir, f"{base_name}.bit")
 
             yosys_cmd = (
-                f"yosys -l {build_dir}/01-synth.log -DSYNTH "
+                f"yosys -l {build_dir}/01-synth.log -DSYNTH -DUART_ENABLED "
                 f"-p 'read_verilog -sv {generated_top} {source_list}; "
                 f"synth_ecp5 -top tt_fpga_top -json {json_file}'"
             )
