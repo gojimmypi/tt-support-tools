@@ -95,8 +95,11 @@ def canonicalize_rectangles(
 def parse_fp3(value: str):
     # parse fixed-point numbers with 3 digits after the decimal point
     # e.g. '20.470' to 20470
-    ip, fp = value.split(".")
-    mul = ip + fp[:3].rjust(3, "0")
+    if "." in value:
+        ip, fp = value.split(".")
+        mul = ip + fp[:3].ljust(3, "0")
+    else:
+        mul = value + "000"
     return int(mul)
 
 
@@ -109,14 +112,14 @@ def parse_dbu_to_nm(value: str, dbu_per_micron: int):
 
 
 def pin_check(
-    gds: str, lef: str, template_def: str, toplevel: str, uses_3v3: bool, tech: str
+    gds: str, lef: str, template_def: str, toplevel: str, uses_vapwr: bool, tech: str
 ):
     logging.info("Running pin check...")
     logging.info(f"* gds: {gds}")
     logging.info(f"* lef: {lef}")
     logging.info(f"* template_def: {template_def}")
     logging.info(f"* toplevel: {toplevel}")
-    logging.info(f"* uses_3v3: {uses_3v3}")
+    logging.info(f"* uses_vapwr: {uses_vapwr}")
 
     # parse pins from template def
     # def syntax: https://coriolis.lip6.fr/doc/lefdef/lefdefref/DEFSyntax.html
@@ -198,7 +201,7 @@ def pin_check(
     rect_re = re.compile(r"RECT (\S+) (\S+) (\S+) (\S+) ;")
 
     power_pins = ["VGND", "VDPWR"]
-    if uses_3v3:
+    if uses_vapwr:
         power_pins.append("VAPWR")
     compat_pins = {"VPWR": "VDPWR"}
 

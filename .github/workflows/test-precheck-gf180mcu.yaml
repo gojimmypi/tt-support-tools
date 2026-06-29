@@ -1,4 +1,4 @@
-name: Precheck Tests
+name: Precheck Tests (gf180mcu)
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PDK_ROOT: /home/runner/pdk
-      PDK_VERSION: d56f8a8ea0f9171cbdc5273035907b93f3f3bed7
+      PDK_VERSION: e8daeda73ca8f5814dbc0b11d1d05802251a3750
 
     steps:
       - name: Check out code
@@ -26,10 +26,10 @@ jobs:
         working-directory: precheck
         run: pip install -r requirements.txt
 
-      - name: Install Sky130 PDK
+      - name: Install Gf180mcu PDK
         uses: TinyTapeout/ciel-action@v1
         with:
-          pdk_name: sky130
+          pdk_name: gf180mcu
           pdk_version: ${{ env.PDK_VERSION }}
           pdk_root: ${{ env.PDK_ROOT }}
 
@@ -45,7 +45,7 @@ jobs:
 
       - name: Run tests
         working-directory: precheck
-        run: nix-shell --run "pytest --junit-xml=test_results.xml"
+        run: nix-shell --run "PDK=gf180mcuD pytest --junit-xml=test_results.xml"
         
       - name: Test Summary
         uses: test-summary/action@v2.4

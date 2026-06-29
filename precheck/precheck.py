@@ -73,6 +73,15 @@ def magic_drc(gds: str, toplevel: str):
         raise PrecheckFailure("Magic DRC failed")
 
 
+def check_drc_report(check: str, report_file: str):
+    report = rdb.ReportDatabase("DRC")
+    report.load(report_file)
+    if report.num_items() > 0:
+        raise PrecheckFailure(
+            f"Klayout {check} failed with {report.num_items()} DRC violations"
+        )
+
+
 def klayout_custom_drc(
     check: str, script_path: str, script_vars: dict[str, str], report_vars: list[str]
 ):
@@ -86,19 +95,19 @@ def klayout_custom_drc(
     if klayout.returncode != 0:
         raise PrecheckFailure(f"Klayout {check} failed")
 
-    report = rdb.ReportDatabase("DRC")
-    report.load(report_file)
-
-    if report.num_items() > 0:
-        raise PrecheckFailure(
-            f"Klayout {check} failed with {report.num_items()} DRC violations"
-        )
+    check_drc_report(check, report_file)
 
 
-def klayout_drc(gds: str, check: str, script=f"{PDK_NAME}_mr.drc", extra_vars=[]):
+def klayout_drc(
+    gds: str,
+    check: str,
+    script=f"{PDK_NAME}_mr.drc",
+    script_dir="tech-files",
+    extra_vars=[],
+):
     logging.info(f"Running klayout {check} on {gds}")
     if "/" not in script:
-        script = f"tech-files/{script}"
+        script = f"{script_dir}/{script}"
     script_vars = {
         check: "true",
         "input": gds,
@@ -117,6 +126,38 @@ def klayout_sg13g2(gds: str):
         gds,
         "sg13g2",
         f"{PDK_ROOT}/{PDK_NAME}/libs.tech/klayout/tech/drc/ihp-sg13g2.drc",
+    )
+
+
+def klayout_gf180mcuD_rule_deck(gds: str, top_module: str, check: str, decks: str):
+    # All gf180mcuD DRC runs go through the PDK's unified rule deck
+    # (gf180mcu.drc); `decks` selects which rule groups to run (see its
+    # `-rd help=true` output).
+    logging.info(f"Running klayout {check} on {gds}")
+    script = f"{PDK_ROOT}/{PDK_NAME}/libs.tech/klayout/tech/drc/gf180mcu.drc"
+    script_vars = {
+        "input": gds,
+        "topcell": top_module,
+        "variant": "gf180mcuD",  # metal_top=11K, mim_option=B, metal_level=5LM
+        "run_mode": "deep",
+        "threads": "1",  # single-threaded to work around a klayout bug
+        "decks": decks,
+    }
+    klayout_custom_drc(check, script, script_vars, ["report"])
+
+
+def klayout_gf180mcuD_antenna(gds: str, top_module: str):
+    # Antenna rules only - they are part of the full deck but get their own
+    # check, so the full DRC below excludes them to avoid running them twice.
+    return klayout_gf180mcuD_rule_deck(gds, top_module, "antenna", "antenna")
+
+
+def klayout_gf180mcuD_drc(gds: str, top_module: str):
+    # Full rule deck (FEOL + BEOL + connectivity) minus density and antenna.
+    # Density is excluded because user projects rely on the metal fill that is
+    # added after precheck to meet it; antenna has its own check above.
+    return klayout_gf180mcuD_rule_deck(
+        gds, top_module, "gf180mcuD", "all,-density,-antenna"
     )
 
 
@@ -166,9 +207,9 @@ def boundary_check(gds: str, tech: str):
         raise PrecheckFailure("Shapes outside project area")
 
 
-def power_pin_check(verilog: str, lef: str, uses_3v3: bool):
+def power_pin_check(verilog: str, lef: str, uses_vapwr: bool):
     """Ensure that VPWR / VGND are present and have USE definitions,
-    and that VAPWR is present if and only if 'uses_3v3' is set."""
+    and that VAPWR is present if and only if 'uses_vapwr' is set."""
     verilog_s = open(verilog).read().replace("VPWR", "VDPWR")
     lef_s = open(lef).read().replace("VPWR", "VDPWR")
 
@@ -183,7 +224,7 @@ def power_pin_check(verilog: str, lef: str, uses_3v3: bool):
     )
 
     for ft, s in (("Verilog", verilog_s), ("LEF", lef_s)):
-        for pwr, ex in (("VGND", True), ("VDPWR", True), ("VAPWR", uses_3v3)):
+        for pwr, ex in (("VGND", True), ("VDPWR", True), ("VAPWR", uses_vapwr)):
             if (pwr in s) and not ex:
                 raise PrecheckFailure(f"{ft} contains {pwr}")
             if not (pwr in s) and ex:
@@ -254,7 +295,12 @@ def urpm_nwell_check(gds: str, top_module: str):
 
 
 def analog_pin_check(
-    gds: str, tech: str, is_analog: bool, uses_3v3: bool, analog_pins: int, pinout: dict
+    gds: str,
+    tech: str,
+    is_analog: bool,
+    uses_vapwr: bool,
+    analog_pins: int,
+    pinout: dict,
 ):
     """Check that every analog pin connects to a piece of metal
     if and only if the pin is used according to info.yaml."""
@@ -264,7 +310,7 @@ def analog_pin_check(
         filtered = {}
 
         for pin, (rect, pin_layer, via_layers) in enumerate(
-            analog_pin_rects(tech, uses_3v3)
+            analog_pin_rects(tech, uses_vapwr)
         ):
             for layer in [pin_layer] + via_layers:
                 if layer not in filtered:
@@ -375,19 +421,26 @@ def main():
     top_module = yaml_data["project"].get("top_module", f"tt_um_wokwi_{wokwi_id}")
     assert top_module == os.path.basename(gds_stem)
 
-    tiles = yaml_data.get("project", {}).get("tiles", "1x1")
-    analog_pins = yaml_data.get("project", {}).get("analog_pins", 0)
+    project_cfg = yaml_data.get("project", {})
+    tiles = project_cfg.get("tiles", "1x1")
+    analog_pins = project_cfg.get("analog_pins", 0)
     is_analog = analog_pins > 0
-    uses_3v3 = bool(yaml_data.get("project", {}).get("uses_3v3", False))
+    # "uses_3v3" is the legacy name for "uses_vapwr"; still accepted for compat.
+    uses_vapwr = bool(project_cfg.get("uses_vapwr", project_cfg.get("uses_3v3", False)))
     pinout = yaml_data.get("pinout", {})
-    if uses_3v3 and not is_analog:
-        raise PrecheckFailure("Projects with 3v3 power need at least one analog pin")
+    if uses_vapwr and not is_analog:
+        raise PrecheckFailure("Projects with VAPWR power need at least one analog pin")
     def_root = f"../tech/{tech}/def"
     if is_analog:
-        if uses_3v3:
-            template_def = f"{def_root}/analog/tt_analog_{tiles}_3v3.def"
+        analog_def = f"{def_root}/analog/tt_analog_{tiles}"
+        if uses_vapwr:
+            # gf180's second supply rail is "pgvaa" (its core is already 3v3, so
+            # "_3v3" is a misnomer); fall back to "_3v3" for techs that use it.
+            template_def = f"{analog_def}_pgvaa.def"
+            if not os.path.exists(template_def):
+                template_def = f"{analog_def}_3v3.def"
         else:
-            template_def = f"{def_root}/analog/tt_analog_{tiles}.def"
+            template_def = f"{analog_def}.def"
     elif tech == "ihp-sg13g2" or tech == "gf180mcuD":
         template_def = f"{def_root}/tt_block_{tiles}_pgvdd.def"
     else:
@@ -407,7 +460,7 @@ def main():
         {
             "name": "Magic DRC",
             "check": lambda: magic_drc(gds_file, top_module),
-            "techs": ["sky130A", "gf180mcuD"],
+            "techs": ["sky130A"],
         },
         {
             "name": "KLayout FEOL",
@@ -445,13 +498,13 @@ def main():
         {
             "name": "Pin check",
             "check": lambda: pin_check(
-                gds_file, lef_file, template_def, top_module, uses_3v3, tech
+                gds_file, lef_file, template_def, top_module, uses_vapwr, tech
             ),
         },
         {"name": "Boundary check", "check": lambda: boundary_check(gds_file, tech)},
         {
             "name": "Power pin check",
-            "check": lambda: power_pin_check(verilog_file, lef_file, uses_3v3),
+            "check": lambda: power_pin_check(verilog_file, lef_file, uses_vapwr),
             "techs": ["sky130A", "gf180mcuD"],
         },
         {"name": "Layer check", "check": lambda: layer_check(gds_file, tech)},
@@ -462,11 +515,21 @@ def main():
             "techs": ["sky130A"],
         },
         {
+            "name": "KLayout GF180MCU DRC",
+            "check": lambda: klayout_gf180mcuD_drc(gds_file, top_module),
+            "techs": ["gf180mcuD"],
+        },
+        {
+            "name": "Antenna check",
+            "check": lambda: klayout_gf180mcuD_antenna(gds_file, top_module),
+            "techs": ["gf180mcuD"],
+        },
+        {
             "name": "Analog pin check",
             "check": lambda: analog_pin_check(
-                gds_file, tech, is_analog, uses_3v3, analog_pins, pinout
+                gds_file, tech, is_analog, uses_vapwr, analog_pins, pinout
             ),
-            "techs": ["sky130A", "ihp-sg13g2"],
+            "techs": ["sky130A", "ihp-sg13g2", "gf180mcuD"],
         },
         {
             "name": "Verilog syntax check",
