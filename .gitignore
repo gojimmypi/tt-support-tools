@@ -2,3 +2,4 @@
 setuptokens.sh
 __pycache__
 *.egg-info
+/.vs
